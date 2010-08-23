@@ -1,0 +1,11 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: amc
+Description: AMC Drive Communications Library
+Requires:
+Version: @VERSION@
+Libs: -L${libdir} -lamc
+Cflags: -I${includedir}
