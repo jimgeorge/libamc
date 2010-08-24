@@ -12,7 +12,6 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <linux/serial.h>
 #include <errno.h>
 #include "serial.h"
@@ -138,21 +137,5 @@ int serial_port_init(const char *device_name,
 void serial_port_flush(int fd)
 {
 	tcflush(fd, TCIOFLUSH);
-}
-
-void serial_port_set_rts(int fd)
-{
-	int flags = 0;
-	ioctl(fd, TIOCMGET, &flags);
-	flags |= TIOCM_RTS;
-	ioctl(fd, TIOCMSET, &flags);
-}
-
-void serial_port_clear_rts(int fd)
-{
-	int flags = 0;
-	ioctl(fd, TIOCMGET, &flags);
-	flags &= ~TIOCM_RTS;
-	ioctl(fd, TIOCMSET, &flags);
 }
 
