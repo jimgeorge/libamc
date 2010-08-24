@@ -2,7 +2,7 @@ AM_CPPFLAGS = -Wall
 ACLOCAL_AMFLAGS = -I m4
 
 lib_LTLIBRARIES = libamc.la
-libamc_la_SOURCES = serial.c modbus.c modbus.h
+libamc_la_SOURCES = serial.c amc.c amc.h crc.c crc.h
 libamc_la_LDFLAGS = -version-info 0:1:0
 
 # Include files to install
