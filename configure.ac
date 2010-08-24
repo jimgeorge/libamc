@@ -1,7 +1,7 @@
 dnl Autoconf script for libamnc
 
 AC_INIT(libamc, 0.1.0, jgeorge@engr.colostate.edu)
-AC_CONFIG_SRCDIR([src/libamc.c])
+AC_CONFIG_SRCDIR([src/amc.c])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
 #AM_DISABLE_STATIC
