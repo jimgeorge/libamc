@@ -24,7 +24,6 @@ AC_CHECK_HEADERS([termios.h unistd.h endian.h poll.h errno.h fcntl.h])
 
 AC_C_CONST
 AC_CHECK_FUNCS([bzero strtol ntohs htons poll])
-AC_FUNC_MALLOC
 AC_PROG_CXX
 AC_PROG_RANLIB
 
