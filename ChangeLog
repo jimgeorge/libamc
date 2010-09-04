@@ -1,0 +1,7 @@
+Sep 4, 2010
+0.1.0	Jim George <jgeorge@engr.colostate.edu>
+* Added return values with specific error conditions
+* Header file properly indicates packed data structures
+* Init function does not attempt to init serial port now, expects an
+already-configured serial port file descriptor
+
