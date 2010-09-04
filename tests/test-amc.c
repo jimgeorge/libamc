@@ -97,6 +97,7 @@ int main(int argc, char *argv[])
 
 	if (-1 == open_drive(drv, serial_device, baudrate, serial_mode, &serial_fd)) {
 		printf("Could not open %s\n", serial_device);
+		return -1;
 	}
 
 	while (-1 != (opt = getopt_long(argc, argv, "dv", opt_lst, &opt_idx))) {
@@ -105,6 +106,7 @@ int main(int argc, char *argv[])
 			close(serial_fd);
 			if (-1 == open_drive(drv, serial_device, baudrate, serial_mode, &serial_fd)) {
 					printf("Could not open %s\n", serial_device);
+					return -1;
 			}
 			break;
 		case OPT_GETID:
