@@ -8,10 +8,20 @@
 
 #define AMC_DEFAULT_TIMEOUT_MS 1000
 
-#define AMCSTRUCT #pragma pack(1)\
-struct
-
-#pragma pack(1)
+#define AMC_EOK 0
+#define AMC_ESERIALINIT -1
+#define AMC_EINVALIDACCESSTYPE -2
+#define AMC_EWRITE -3
+#define AMC_EREAD -4
+#define AMC_ETIMEOUT -5
+#define AMC_ESEQ -6
+#define AMC_ECRC -7
+#define AMC_EINCOMPLETE -8
+#define AMC_EINVALIDCMD -9
+#define AMC_ENOACCESS -10
+#define AMC_EFRAMEERR -11
+#define AMC_EUNKNOWNSTATUS -12
+#define AMC_EBUFSIZE -13
 
 #define AMC_CMDTYPE_READ 1
 #define AMC_CMDTYPE_WRITE 2
@@ -28,7 +38,6 @@ struct
 #define amc_int16_from_le(x) x
 #define amc_int32_to_le(x) x
 #define amc_int32_from_le(x) x
-
 
 /* Bridge control bits */
 #define AMC_BC_INHIBIT (1 << 0)
@@ -84,14 +93,23 @@ struct
 #define AMC_DS_NEGVELOCITYLIM (1 << 4)
 #define AMC_DS_CMDPROFILER (1 << 5)
 
-union control {
+struct amc_drive {
+	uint8_t seq_ctr; /**< Message sequence counter */
+	uint16_t *crc_table; /**< Cached CRC table */
+	int device; /**< Device number for the communications port */
+	int address; /**< Device address */
+	int timeout_ms; /**< Read timeout in milliseconds */
+	int debug; /**< Debug flag, set to 1 to enable debug messages */
+};
+
+union amc_control {
 	uint8_t byte;
 	struct {
 		uint8_t cmd : 2; /**< Command type */
 		uint8_t seq : 4; /**< Sequence number, rolls over at 0x0F */
 		uint8_t rsvd : 2;
-	} bits;
-};
+	} __attribute__((__packed__)) bits;
+} __attribute__((__packed__));
 
 /**
 \brief Command packet sent to AMC drives
@@ -108,12 +126,12 @@ length payload_len.
 struct amc_command {
 	uint8_t sof; /**< Start of Frame (always set to 0xA5) */
 	uint8_t addr; /**< Destination address, 00 = broadcast, 01-3F are valid, FF = Master */
-	union control control; /**< Control byte */
+	union amc_control control; /**< Control byte */
 	uint8_t index; /**< Index into the parameter array within a drive */
 	uint8_t offset; /**< Offset within the parameter array addressed by index */
 	uint8_t payload_len; /**< Payload length in words */
 	uint16_t crc; /**< CRC of the header */
-};
+} __attribute__((__packed__));
 
 /**
 \brief Response packet sent to AMC drives
@@ -122,21 +140,12 @@ struct amc_command {
 struct amc_response {
 	uint8_t sof; /**< Start of Frame (always set to 0xA5) */
 	uint8_t addr; /**< Destination address, 00 = broadcast, 01-3F are valid, FF = Master */
-	union control control; /**< Control byte */
+	union amc_control control; /**< Control byte */
 	uint8_t status1; /**< First status byte */
 	uint8_t status2; /**< Second status byte */
 	uint8_t payload_len; /**< Payload length in words */
 	uint16_t crc; /**< CRC of the header */
-};
-
-struct amc_drive {
-	uint8_t seq_ctr; /**< Message sequenc counter */
-	uint16_t *crc_table; /**< Cached CRC table */
-	int device; /**< Device number for the communications port */
-	int address; /**< Device address */
-	int timeout_ms; /**< Read timeout in milliseconds */
-	int debug; /**< Debug flag, set to 1 to enable debug messages */
-};
+} __attribute__((__packed__));
 
 struct amc_product_info {
 	uint8_t rsvd1[2];
@@ -151,9 +160,10 @@ struct amc_product_info {
 	uint8_t product_serial_number[32];
 	uint8_t product_build_date[32];
 	uint8_t product_build_time[32];
-};
+} __attribute__((__packed__));
 
-int amc_drive_new(struct amc_drive *drv, char *dev, int spd, int address);
+int amc_serial_open(char *dev, int spd);
+int amc_drive_new(struct amc_drive *drv, int address, int serial_fd);
 int amc_cmd_write(struct amc_drive *drv, struct amc_command *cmd, int access_type, 
 	int response_len, uint16_t *payload, int payload_len);
 int amc_resp_read(struct amc_drive *drv, struct amc_response *rsp, void *payload, int payload_max_size);

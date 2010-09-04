@@ -7,31 +7,49 @@
 #include <errno.h>
 #include <sys/uio.h>
 #include <arpa/inet.h>
+#include <config.h>
 
 #include "serial.h"
 #include "amc.h"
 #include "crc.h"
 
 /**
+\brief Open a serial port and set up default parameters
+\param *dev Name of serial device to use (eg: "/dev/ttyUSB0")
+\param spd Baud rate of the serial port
+\return File descriptor on success, -1 on failure
+
+Open the specified serial device at the specified speed,
+with default settings for parity, number of bits, etc.
+*/
+int amc_serial_open(char *dev, int spd)
+{
+	int fd;
+	if (-1 == serial_port_init(dev, spd, &fd)) {
+		return -1;
+	}
+	else {
+		return fd;
+	}
+}
+
+/**
 \brief Initialize a new AMC drive communications structure
 \param *drv Pointer to AMC drive structure
-\param *dev Name of serial device to use (eg: "/dev/ttyUSB0")
-\param *spd Baud rate of the serial port
-\param *address Address of the drive
+\param address Address of the drive
+\param serial_fd File descriptor of open serial port
 \return 0 on success, -1 on failure
 
-Initialize a new AMC drive structure, open the specified serial device at the
-specified speed (with default settings for parity, number of bits, etc).
+Initialize a new AMC drive structure.
 */
-int amc_drive_new(struct amc_drive *drv, char *dev, int spd, int address)
+int amc_drive_new(struct amc_drive *drv, int address, int serial_fd)
 {
-	if (-1 == serial_port_init(dev, spd, &drv->device)) return -1;
-
+	drv->device = serial_fd;
 	drv->crc_table = amc_crc_mktable(AMC_CRC_POLY);
 	drv->seq_ctr = 0;
 	drv->address = address;
 	drv->timeout_ms = AMC_DEFAULT_TIMEOUT_MS;
-	return 0;
+	return AMC_EOK;
 }
 
 /**
@@ -43,7 +61,7 @@ int amc_drive_new(struct amc_drive *drv, char *dev, int spd, int address)
 \param *payload Payload to send as a part of command packet, can be NULL if payload_len is zero
 \param payload_len Length of payload in bytes to send with this command packet.
 Can be zero to indicate no payload
-\return Number of bytes written on success, -1 on failure
+\return Number of bytes written on success, negative error value on failure
 
 This function computes CRC and initializes an AMC command header packet
 and sends it to the drive. The index and offset fields are not
@@ -55,6 +73,8 @@ brackets.
 
 This function makes use of writev to implement write combining and
 minimize calls to the kernel.
+
+A simple error check would look for negative return values
 */
 int amc_cmd_write(struct amc_drive *drv, struct amc_command *cmd, int access_type, 
 	int response_len, uint16_t *payload, int payload_len)
@@ -86,7 +106,7 @@ int amc_cmd_write(struct amc_drive *drv, struct amc_command *cmd, int access_typ
 		cmd->payload_len = payload_len / sizeof(uint16_t);
 		break;
 	default:
-		return -1;
+		return AMC_EINVALIDACCESSTYPE;
 	}
 
 	/* Ensure that the CRC field is zero, since it is used as an accumulator */
@@ -152,7 +172,7 @@ int amc_cmd_write(struct amc_drive *drv, struct amc_command *cmd, int access_typ
 	int bytes_written = writev(drv->device, iov, (payload_len > 0) ? 3 : 1);
 
 	if (bytes_written != bytes_to_write) {
-		return -1;
+		return AMC_EWRITE;
 	}
 
 	return bytes_written;
@@ -200,7 +220,7 @@ int amc_resp_read(struct amc_drive *drv, struct amc_response *rsp, void *payload
 			if (drv->debug) {
 				printf("Timed out reading response header\n");
 			}
-			return -1;
+			return AMC_ETIMEOUT;
 		}
 	
 		int bytes_read = read(drv->device, rd_ptr, bytes_to_read);
@@ -211,6 +231,13 @@ int amc_resp_read(struct amc_drive *drv, struct amc_response *rsp, void *payload
 	
 	if (drv->debug) {
 		printf("read: seq = %d\n", (int)rsp->control.bits.seq);
+	}
+	
+	if (rsp->control.bits.seq != drv->seq_ctr) {
+		if (drv->debug) {
+			printf("Sequence error (expected %2d, got %2d)\n", (int)drv->seq_ctr, (int)rsp->control.bits.seq);
+		}
+		return AMC_ESEQ;
 	}
 	
 	uint8_t *buffer = (uint8_t *)rsp;
@@ -233,29 +260,36 @@ int amc_resp_read(struct amc_drive *drv, struct amc_response *rsp, void *payload
 		if (drv->debug) {
 			printf("Header CRC failed (expected %04X, got %04X)\n", crc, ntohs(rsp->crc));
 		}
-		return -1;
+		return AMC_ECRC;
 	}
 	
 	if (rsp->status1 != AMC_CMDRESP_COMPLETE) {
-		if (drv->debug) {
-			switch (rsp->status1) {
-			case AMC_CMDRESP_INCOMPLETE:
+		switch (rsp->status1) {
+		case AMC_CMDRESP_INCOMPLETE:
+			if (drv->debug) {
 				printf("Command not completed\n");
-				break;
-			case AMC_CMDRESP_INVALID:
-				printf("Invalid command\n");
-				break;
-			case AMC_CMDRESP_NOACCESS:
-				printf("No access\n");
-				break;
-			case AMC_CMDRESP_FRAMEERR:
-				printf("Frame error\n");
-				break;
 			}
+			return AMC_EINCOMPLETE;
+		case AMC_CMDRESP_INVALID:
+			if (drv->debug) {
+				printf("Invalid command\n");
+			}
+			return AMC_EINVALIDCMD;
+		case AMC_CMDRESP_NOACCESS:
+			if (drv->debug) {
+				printf("No access\n");
+			}
+			return AMC_ENOACCESS;
+		case AMC_CMDRESP_FRAMEERR:
+			if (drv->debug) {
+				printf("Frame error\n");
+			}
+			return AMC_EFRAMEERR;
 		}
-		return -1;
+		return AMC_EUNKNOWNSTATUS;
 	}
 
+	/* Check if the drive will send a payload with this data */
 	if (!(rsp->control.bits.cmd & 0x02)) {
 		return total_bytes_read;
 	}
@@ -275,7 +309,7 @@ int amc_resp_read(struct amc_drive *drv, struct amc_response *rsp, void *payload
 			if (drv->debug) {
 				printf("Timed out reading payload\n");
 			}
-			return -1;
+			return AMC_ETIMEOUT;
 		}
 	
 		int bytes_read = read(drv->device, rd_ptr, bytes_to_read);
@@ -287,7 +321,7 @@ int amc_resp_read(struct amc_drive *drv, struct amc_response *rsp, void *payload
 			if (drv->debug) {
 				printf("Payload received exceeds max size\n");
 			}
-			return -1;
+			return AMC_EBUFSIZE;
 		}
 	} while (bytes_to_read > 0);
 	total_bytes_read += payload_bytes_read;
@@ -311,7 +345,7 @@ int amc_resp_read(struct amc_drive *drv, struct amc_response *rsp, void *payload
 			if (drv->debug) {
 				printf("Timed out reading payload CRC\n");
 			}
-			return -1;
+			return AMC_ECRC;
 		}
 		int bytes_read = read(drv->device, rd_ptr, bytes_to_read);
 		rd_ptr += bytes_read;
@@ -340,7 +374,7 @@ int amc_resp_read(struct amc_drive *drv, struct amc_response *rsp, void *payload
 		if (drv->debug) {
 			printf("CRC failed (expected %04X, got %04X)\n", crc, ntohs(readback_crc));
 		}
-		return -1;
+		return AMC_ECRC;
 	}
 
 	return total_bytes_read;
