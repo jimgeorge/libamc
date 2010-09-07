@@ -17,18 +17,6 @@
 char serial_device[256] = "/dev/ttyM0";
 int baudrate = 115200;
 
-enum {
-	OPT_GETID = 256,
-	OPT_DEBUG,
-	OPT_PORT,
-	OPT_ENABLEBRIDGE,
-	OPT_QUICKSTOP,
-	OPT_RESETEVENTS,
-	OPT_BRIDGESTATUS,
-	OPT_GETIFACE,
-	OPT_SETIFACE,
-};
-
 int open_drive(struct amc_drive *drv, char *serial_device, int baudrate, int serial_mode, int *serial_fd)
 {
 	*serial_fd = amc_serial_open(serial_device, baudrate);
@@ -45,11 +33,38 @@ int open_drive(struct amc_drive *drv, char *serial_device, int baudrate, int ser
 		return -1;
 	}
 
+	amc_get_access_control(drv);
+
 	return 0;
 }
 
+#define KP 30.0
+#define KI 1.0
+#define KS 20000.0
+
+#define COUNTS_PER_REV 4096.0
+
+#define SCALE_DC1 (8192.0/KP)
+#define SCALE_DS1 (131072.0/(KI * KS))
+
+enum {
+	OPT_GETID = 256,
+	OPT_DEBUG,
+	OPT_PORT,
+	OPT_ENABLEBRIDGE,
+	OPT_QUICKSTOP,
+	OPT_RESETEVENTS,
+	OPT_BRIDGESTATUS,
+	OPT_GETIFACE,
+	OPT_SETIFACE,
+	OPT_GETMOTORSTATUS,
+	OPT_SETSPEED,
+	OPT_REG16,
+	OPT_REG32,
+};
+
 char *usage_string = 
-"Retrieve/control modbus registers on the WiBEX angle converter board\n"
+"Retrieve/control modbus registers on AMC servo drives\n"
 "Usage:\n"
 "--getid: Retrieve drive ID string and version numbers\n"
 "--port=<dev>: Set serial port device to dev\n"
@@ -60,6 +75,12 @@ char *usage_string =
 "--resetevents: Reset latched events, if any\n"
 "--getinterfaceinput=<n>: Retrieve value at interface input n\n"
 "--setinterfaceinput=<n,val>: Set value at interface input n to specified value\n"
+"--getmotorstatus: Get the motor status\n"
+"--setspeed=<n>: Set motor speed in rpm\n"
+"--reg16=<reg[,val]>: Get or set a 16-bit register. reg is a 16-bit hex number\n"
+"        If specified, val is a 16-bit hex number to write.\n"
+"--reg32=<reg[,val]>: Get or set a 32-bit register. reg is a 16-bit hex number\n"
+"        If specified, val is a 32-bit hex number to write.\n"
 ;
 
 static struct option opt_lst[] = {
@@ -73,6 +94,10 @@ static struct option opt_lst[] = {
 	{"resetevents", no_argument, 0, OPT_RESETEVENTS},
 	{"getinterfaceinput", required_argument, 0, OPT_GETIFACE},
 	{"setinterfaceinput", required_argument, 0, OPT_SETIFACE},
+	{"getmotorstatus", no_argument, 0, OPT_GETMOTORSTATUS},
+	{"setspeed", required_argument, 0, OPT_SETSPEED},
+	{"reg16", required_argument, 0, OPT_REG16},
+	{"reg32", required_argument, 0, OPT_REG32},
 
 	{NULL, 0, 0, 0}
 };
@@ -317,6 +342,60 @@ int main(int argc, char *argv[])
 				printf("Interface %2d = 0x%08X (%d)\n", interface_number, interface_value, interface_value);
 			}
 			break;
+		case OPT_GETMOTORSTATUS:
+			{
+				int16_t current_demand, current_measured;
+				if (0 > amc_get_uint16(drv, 0x10, 0x02, &current_demand)) {
+					printf("Could not read motor current\n");
+					return -1;
+				}
+				if (0 > amc_get_uint16(drv, 0x10, 0x03, &current_measured)) {
+					printf("Could not read motor current\n");
+					return -1;
+				}
+				printf("Current demand: %.2f, measured: %.2f\n", current_demand/SCALE_DC1, current_measured/SCALE_DC1);
+				int32_t speed_measured;
+				amc_get_uint32(drv, 0x11, 0x02, &speed_measured);
+				printf("Speed: %.2f rpm (%d)\n", (speed_measured / SCALE_DS1) / COUNTS_PER_REV * 60.0, speed_measured);
+			}
+			break;
+		case OPT_SETSPEED:
+			{
+				int32_t speed;
+				speed = (atoi(optarg) * COUNTS_PER_REV / 60.0) * SCALE_DS1;
+				amc_write_uint32(drv, 0x45, 0, speed);
+			}
+			break;
+		case OPT_REG16:
+			{
+				uint16_t reg_num;
+				uint16_t reg_val;
+				char *next_ptr;
+				
+				reg_num = strtol(optarg, &next_ptr, 16);
+				if (*next_ptr != 0) {
+					reg_val = strtol(next_ptr + 1, NULL, 16);
+					amc_write_uint16(drv, reg_num >> 8, reg_num & 0xFF, reg_val);
+				}
+				amc_get_uint16(drv, reg_num >> 8, reg_num & 0xFF, &reg_val);
+				printf("Register %02X:%02X = %04X (%5d)\n", reg_num >> 8, reg_num & 0xFF, reg_val, reg_val);
+			}
+			break;
+		case OPT_REG32:
+				{
+				uint16_t reg_num;
+				uint32_t reg_val;
+				char *next_ptr;
+				
+				reg_num = strtol(optarg, &next_ptr, 16);
+				if (*next_ptr != 0) {
+					reg_val = strtol(next_ptr + 1, NULL, 16);
+					amc_write_uint32(drv, reg_num >> 8, reg_num & 0xFF, reg_val);
+				}
+				amc_get_uint32(drv, reg_num >> 8, reg_num & 0xFF, &reg_val);
+				printf("Register %02X:%02X = %08X (%10d)\n", reg_num >> 8, reg_num & 0xFF, reg_val, reg_val);
+			}
+		break;
 		default:
 			opt_errors++;
 			break;
