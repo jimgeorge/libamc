@@ -1,7 +1,19 @@
+/**
+\file tests/test-amc.c
+\brief Test program for the AMC drive communication library
+\author Jim George
+
+This module implements a test program for the AMC drive communications
+library. Uses command line options to send one or more packets to the 
+drive, and reads back the drive response. Some packets are parsed and
+the output is displayed in greater detail.
+*/
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/ioctl.h>
 
 #ifdef MOXA
@@ -61,6 +73,7 @@ enum {
 	OPT_SETSPEED,
 	OPT_REG16,
 	OPT_REG32,
+	OPT_WDT,
 };
 
 char *usage_string = 
@@ -81,6 +94,7 @@ char *usage_string =
 "        If specified, val is a 16-bit hex number to write.\n"
 "--reg32=<reg[,val]>: Get or set a 32-bit register. reg is a 16-bit hex number\n"
 "        If specified, val is a 32-bit hex number to write.\n"
+"--wdt[=n]: Get/set the Watchdog Timer. Set to 0 to disable\n"
 ;
 
 static struct option opt_lst[] = {
@@ -98,6 +112,7 @@ static struct option opt_lst[] = {
 	{"setspeed", required_argument, 0, OPT_SETSPEED},
 	{"reg16", required_argument, 0, OPT_REG16},
 	{"reg32", required_argument, 0, OPT_REG32},
+	{"wdt", optional_argument, 0, OPT_WDT},
 
 	{NULL, 0, 0, 0}
 };
@@ -128,6 +143,7 @@ int main(int argc, char *argv[])
 	while (-1 != (opt = getopt_long(argc, argv, "dv", opt_lst, &opt_idx))) {
 		switch(opt) {
 		case OPT_PORT:
+			strncpy(serial_device, optarg, 256);
 			close(serial_fd);
 			if (-1 == open_drive(drv, serial_device, baudrate, serial_mode, &serial_fd)) {
 					printf("Could not open %s\n", serial_device);
@@ -382,7 +398,7 @@ int main(int argc, char *argv[])
 			}
 			break;
 		case OPT_REG32:
-				{
+			{
 				uint16_t reg_num;
 				uint32_t reg_val;
 				char *next_ptr;
@@ -395,7 +411,18 @@ int main(int argc, char *argv[])
 				amc_get_uint32(drv, reg_num >> 8, reg_num & 0xFF, &reg_val);
 				printf("Register %02X:%02X = %08X (%10d)\n", reg_num >> 8, reg_num & 0xFF, reg_val, reg_val);
 			}
-		break;
+			break;
+		case OPT_WDT:
+			{
+				uint16_t timeout_ms;
+				if (optarg != NULL) {
+					timeout_ms = strtol(optarg, NULL, 10);
+					amc_write_uint16(drv, 0x04, 0x01, timeout_ms);	
+				}
+				amc_get_uint16(drv, 0x04, 0x01, &timeout_ms);
+				printf("Watchdog timer timeout: %5d ms\n", timeout_ms);
+			}
+			break;
 		default:
 			opt_errors++;
 			break;

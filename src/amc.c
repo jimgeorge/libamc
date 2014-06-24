@@ -1,3 +1,12 @@
+/**
+\file src/amc.c
+\brief Main AMC communications module
+\author Jim George
+
+This module defines functions used to communicate with the AMC servo
+drives
+*/
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>

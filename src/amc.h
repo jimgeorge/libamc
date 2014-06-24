@@ -1,3 +1,12 @@
+/**
+\file src/amc.h
+\brief Header file for AMC communications
+\author Jim George
+
+The header file with all externally visible functions exported by
+the AMC servo drive communications library
+*/
+
 #ifndef _AMC_H_
 #define _AMC_H_
 

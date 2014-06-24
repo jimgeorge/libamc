@@ -1,3 +1,9 @@
+/**
+\file src/crc.h
+\brief Header file for CRC computation functions
+\author Jim George
+*/
+
 #ifndef _CRC_H_
 #define _CRC_H_
 

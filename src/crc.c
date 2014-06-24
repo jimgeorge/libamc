@@ -1,10 +1,10 @@
 /**
-\file crc.c
+\file src/crc.c
 \brief Module to compute CRCs according to AMC protocol manual
 \author Jim George
 
-
-
+CRC calculation module. Implements a fast CRC computation based on the
+CRC polynomial used in the AMC servo drives.
 */
 
 #include <stdio.h>
