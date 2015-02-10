@@ -1,6 +1,0 @@
-First time build:
-
-autoreconf -i
-automake -a
-libtoolize
-autoreconf
